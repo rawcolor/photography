@@ -27,6 +27,22 @@
     nav a:hover{color:var(--text)} nav a.active{color:var(--text);border-bottom-color:var(--accent)}
     .icon{display:inline-flex;width:18px;height:18px;vertical-align:middle;opacity:.9}
 
+    /* Make nav drop to a new row on small screens */
+    @media (max-width:700px){
+      .header-wrap{
+        flex-direction:column;       /* stack brand then nav */
+        align-items:flex-start;
+        gap:8px;
+      }
+      nav ul{
+        width:100%;                  /* allow wrapping full width */
+        justify-content:space-between;
+        flex-wrap:wrap;
+        row-gap:8px;
+        column-gap:16px;
+      }
+    }
+
     .section{max-width:var(--max);margin:0 auto;padding:28px 20px 56px}
 
     /* Masonry via CSS Grid + measured row spans */
