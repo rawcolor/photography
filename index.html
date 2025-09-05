@@ -7,10 +7,15 @@
   <style>
     :root{
       --bg:#0a0a0a;--bg-2:#111;--text:#d6d6d6;--muted:#9a9a9a;--accent:#7fd1b9;--max:1200px;
-      --gap:14px;           /* grid gap, keep in sync with JS */
-      --row:8px;            /* base row height unit, keep in sync with JS */
+      --gap:14px;            /* grid gap, keep in sync with JS */
+      --row:8px;             /* base row height unit, keep in sync with JS */
       --tile-radius:10px;
+      --min-portrait:320px;  /* min visual height for portrait images */
     }
+    @media (max-width:700px){
+      :root{ --min-portrait:260px; }
+    }
+
     *{box-sizing:border-box}
     html,body{
       margin:0;padding:0;background:var(--bg);color:var(--text);
@@ -60,8 +65,14 @@
     /* Landscape images span 2 columns (when there’s room) */
     .tile.wide{ grid-column:span 2; }
     @media (max-width: 700px){
-      /* On small screens force everything to 1 column */
       .tile.wide{ grid-column:auto; }
+    }
+
+    /* When we enforce a min height, fill the tile (no empty bottom space) */
+    .tile.fill img{
+      height:100%;
+      width:100%;
+      object-fit:cover;      /* crops if needed to fill the tile */
     }
 
     /* Group divider (no headings) */
@@ -156,24 +167,33 @@
       grid.appendChild(a);
     }
 
-    // Measure & set grid row span based on actual rendered height,
-    // enforcing a minimum height for portrait images
+    // Measure & set grid row span; enforce min height for portraits and fill the tile
     function sizeTile(tile, img, grid){
+      const styles = getComputedStyle(document.documentElement);
+      const minPortrait = parseFloat(styles.getPropertyValue('--min-portrait')) || 320;
+
       const gap = parseFloat(getComputedStyle(grid).getPropertyValue('--gap')) || 14;
       const row = parseFloat(getComputedStyle(grid).getPropertyValue('--row')) || 8;
 
-      // actual rendered height
+      // current rendered image height at width:100%
       let h = img.getBoundingClientRect().height || img.naturalHeight || 0;
 
-      // Enforce a minimum height for portrait images
-      const MIN_PORTRAIT = 480; // px — tweak to taste
-      if (img.naturalHeight >= img.naturalWidth) {
-        h = Math.max(h, MIN_PORTRAIT);
+      let clamped = false;
+      const isPortrait = img.naturalHeight >= img.naturalWidth;
+      if (isPortrait && h < minPortrait) {
+        h = minPortrait;     // make tile taller
+        clamped = true;      // and fill it with cover
       }
 
-      // Number of row units to span (includes gap compensation)
       const rows = Math.max(1, Math.ceil((h + gap) / (row + gap)));
       tile.style.gridRowEnd = `span ${rows}`;
+
+      // Toggle fill mode (prevents empty space by cropping to fill)
+      if (clamped) {
+        tile.classList.add('fill');
+      } else {
+        tile.classList.remove('fill');
+      }
     }
 
     // Re-measure on resize (debounced)
