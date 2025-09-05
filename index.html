@@ -7,13 +7,13 @@
   <style>
     :root{
       --bg:#0a0a0a;--bg-2:#111;--text:#d6d6d6;--muted:#9a9a9a;--accent:#7fd1b9;--max:1200px;
-      --gap:14px;           /* grid gap, keep in sync with JS */
-      --row:8px;            /* base row height unit, keep in sync with JS */
+      --gap:14px;            /* grid gap, keep in sync with JS */
+      --row:8px;             /* base row height unit, keep in sync with JS */
       --tile-radius:10px;
-      --min-portrait:320px; /* minimum displayed height for portraits */
+      --min-portrait:360px;  /* make this bigger/smaller to taste */
     }
     @media (max-width:700px){
-      :root{ --min-portrait:260px; }
+      :root{ --min-portrait:280px; }
     }
 
     *{box-sizing:border-box}
@@ -62,11 +62,11 @@
     .tile:hover{ transform:translateY(-2px) }
     .tile img{ display:block; width:100%; height:auto; }  /* scales with tile width */
 
-    /* Span helper: “2 columns wide” */
+    /* Span helpers */
     .tile.span2{ grid-column:span 2; }
-    @media (max-width:700px){
-      .tile.span2{ grid-column:auto; } /* single column on small screens */
-    }
+    .tile.span3{ grid-column:span 3; }
+    @media (max-width:1000px){ .tile.span3{ grid-column:span 2; } }
+    @media (max-width:700px){  .tile.span2,.tile.span3{ grid-column:auto; } }
 
     /* Group divider (no headings) */
     .group + .group{
@@ -135,11 +135,8 @@
 
     const gallery = document.getElementById('gallery');
 
-    function measureHeight(img){
-      return img.getBoundingClientRect().height || img.naturalHeight || 0;
-    }
+    function measureHeight(el){ return el.getBoundingClientRect().height || 0; }
 
-    // Compute row span from height
     function setRowSpan(tile, grid, height){
       const styles = getComputedStyle(grid);
       const gap = parseFloat(styles.getPropertyValue('--gap')) || 14;
@@ -148,49 +145,40 @@
       tile.style.gridRowEnd = `span ${rows}`;
     }
 
-    // Main sizing logic:
-    //  - Landscapes: always span 2 columns.
-    //  - Portraits: if displayed height < --min-portrait, temporarily span 2 columns (so image grows),
-    //               else keep at 1 column. Measure AFTER class changes apply.
-    function sizeTile(tile, img, grid){
-      const minPortrait = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-portrait')) || 320;
-      const isPortrait = img.naturalHeight >= img.naturalWidth;
-
-      // Reset span for portraits before deciding (landscapes enforce span2)
-      tile.classList.toggle('span2', !isPortrait);
-
-      // Let layout apply, then measure and possibly up-span portraits
-      requestAnimationFrame(() => {
-        let h = measureHeight(img);
-
-        if (isPortrait) {
-          if (h < minPortrait) {
-            // Grow to 2 columns to scale width & height proportionally
-            tile.classList.add('span2');
-            // measure again after width change
-            requestAnimationFrame(() => {
-              const h2 = measureHeight(img);
-              setRowSpan(tile, grid, h2);
-            });
-            return;
-          } else {
-            // If it doesn't need extra width, ensure we don't keep span2
-            tile.classList.remove('span2');
-            // Re-measure once more in case width changed by removal
-            requestAnimationFrame(() => {
-              const h2 = measureHeight(img);
-              setRowSpan(tile, grid, h2);
-            });
-            return;
-          }
-        }
-
-        // Landscape (already span2) or after portrait handling
-        setRowSpan(tile, grid, h);
-      });
+    function applySpan(tile, n){
+      tile.classList.remove('span2','span3');
+      if (n === 2) tile.classList.add('span2');
+      if (n === 3) tile.classList.add('span3');
     }
 
-    // Build a tile and attach load handler
+    // Decide how many columns a portrait needs to reach the min height
+    function sizePortrait(tile, img, grid, minPortrait){
+      const MAX_SPAN = 3;          // raise to 4 if you want even bigger
+      let span = 1;
+
+      const tryNext = () => {
+        // measure AFTER span class has affected layout
+        requestAnimationFrame(() => {
+          const h = measureHeight(img);
+          if (h < minPortrait && span < MAX_SPAN) {
+            span += 1;
+            applySpan(tile, span);
+            tryNext();  // try again
+          } else {
+            setRowSpan(tile, grid, measureHeight(img));
+          }
+        });
+      };
+
+      applySpan(tile, span);
+      tryNext();
+    }
+
+    function sizeLandscape(tile, img, grid){
+      applySpan(tile, 2);  // always two columns
+      requestAnimationFrame(() => setRowSpan(tile, grid, measureHeight(img)));
+    }
+
     function appendTile(grid, name){
       const a = document.createElement('a');
       a.className = 'tile';
@@ -203,13 +191,21 @@
       img.alt = niceAlt(name);
       img.src = "portrait/" + encodeURIComponent(name);
 
-      img.onload = () => sizeTile(a, img, grid);
+      img.onload = () => {
+        const minPortrait = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-portrait')) || 360;
+        const isPortrait = img.naturalHeight >= img.naturalWidth;
+        if (isPortrait) {
+          sizePortrait(a, img, grid, minPortrait);
+        } else {
+          sizeLandscape(a, img, grid);
+        }
+      };
 
       a.appendChild(img);
       grid.appendChild(a);
     }
 
-    // Reflow everything on resize (debounced)
+    // Reflow on resize (debounced)
     let resizeTimer;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
@@ -217,13 +213,19 @@
         document.querySelectorAll('.group .grid').forEach(grid => {
           grid.querySelectorAll('.tile').forEach(tile => {
             const img = tile.querySelector('img');
-            if (img && img.complete) sizeTile(tile, img, grid);
+            if (!img || !img.complete) return;
+            const minPortrait = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-portrait')) || 360;
+            const isPortrait = img.naturalHeight >= img.naturalWidth;
+
+            // Re-decide span after width changes
+            if (isPortrait) sizePortrait(tile, img, grid, minPortrait);
+            else            sizeLandscape(tile, img, grid);
           });
         });
       }, 120);
     });
 
-    // Render each letter group
+    // Render
     Object.keys(byLetter).sort().forEach(k => {
       const group = document.createElement('div');
       group.className = 'group';
