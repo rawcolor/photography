@@ -102,48 +102,109 @@
 
     const gallery = document.getElementById('gallery');
 
-    function measureHeight(el){ return el.getBoundingClientRect().height || 0; }
+    /* ---------- layout helpers ---------- */
+    const epsRow = 6;            // px tolerance to consider "same row"
+    const similarPct = 0.10;     // 10% height similarity threshold
+    function rect(el){ return el.getBoundingClientRect(); }
+    function rowKey(el){ return Math.round(rect(el).top / epsRow) * epsRow; }
+    function measureH(img){ return rect(img).height || 0; }
 
     function setRowSpan(tile, grid, height){
-      const styles = getComputedStyle(grid);
-      const gap = parseFloat(styles.getPropertyValue('--gap')) || 14;
-      const row = parseFloat(styles.getPropertyValue('--row')) || 8;
+      const cs = getComputedStyle(grid);
+      const gap = parseFloat(cs.getPropertyValue('--gap')) || 14;
+      const row = parseFloat(cs.getPropertyValue('--row')) || 8;
       const rows = Math.max(1, Math.ceil((height + gap) / (row + gap)));
       tile.style.gridRowEnd = `span ${rows}`;
     }
-
     function applySpan(tile, n){
       tile.classList.remove('span2','span3');
       if (n === 2) tile.classList.add('span2');
       if (n === 3) tile.classList.add('span3');
     }
 
-    // Portraits: escalate span 1→2→3 until >= min height
-    function sizePortrait(tile, img, grid, minPortrait){
+    // try to reach min height by widening: 1 -> 2 -> 3
+    function escalateToMin(tile, img, grid, minH){
       const MAX_SPAN = 3;
       let span = 1;
-
       const step = () => {
         requestAnimationFrame(() => {
-          const h = measureHeight(img);
-          if (h < minPortrait && span < MAX_SPAN) {
+          const h = measureH(img);
+          if (h < minH && span < MAX_SPAN) {
             span += 1;
             applySpan(tile, span);
             step();
           } else {
-            setRowSpan(tile, grid, measureHeight(img));
+            setRowSpan(tile, grid, measureH(img));
           }
         });
       };
-
       applySpan(tile, span);
       step();
     }
 
-    // Landscapes always span 2 columns
-    function sizeLandscape(tile, img, grid){
-      applySpan(tile, 2);
-      requestAnimationFrame(() => setRowSpan(tile, grid, measureHeight(img)));
+    // phase 2: row-aware promotion
+    function promoteRowAware(grid){
+      const minPortrait = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-portrait')) || 360;
+      // build rows
+      const tiles = Array.from(grid.querySelectorAll('.tile'));
+      const rows = new Map();
+      tiles.forEach(t => {
+        const k = rowKey(t);
+        if (!rows.has(k)) rows.set(k, []);
+        rows.get(k).push(t);
+      });
+
+      rows.forEach(tilesInRow => {
+        // candidates: portrait, currently span1, below min height
+        const candidates = tilesInRow
+          .map(t => {
+            const img = t.querySelector('img');
+            const isPortrait = img && img.naturalHeight >= img.naturalWidth;
+            return { t, img, isPortrait, h: img ? measureH(img) : 0 };
+          })
+          .filter(o =>
+            o.isPortrait &&
+            !o.t.classList.contains('span2') &&
+            !o.t.classList.contains('span3') &&
+            o.h > 0 && o.h < minPortrait
+          );
+
+        candidates.forEach(o => {
+          // check for a same-row peer with similar height (+/-10%)
+          const hasPeer = candidates.some(p => {
+            if (p.t === o.t) return false;
+            const bigger = Math.max(p.h, o.h), smaller = Math.min(p.h, o.h);
+            return (bigger - smaller) / bigger <= similarPct;
+          });
+
+          if (!hasPeer) {
+            // lonely shorty -> escalate
+            escalateToMin(o.t, o.img, grid, minPortrait);
+          } else {
+            // keep both span1 but set proper row span for current height
+            setRowSpan(o.t, grid, o.h);
+          }
+        });
+
+        // Non-candidates still need row span set (landscapes or already tall)
+        tilesInRow.forEach(t => {
+          if (candidates.find(c => c.t === t)) return;
+          const img = t.querySelector('img');
+          if (img && img.complete) setRowSpan(t, grid, measureH(img));
+        });
+      });
+    }
+
+    function initialPlace(grid){
+      // Landscapes start span2, portraits span1
+      grid.querySelectorAll('.tile').forEach(tile => {
+        const img = tile.querySelector('img');
+        if (!img) return;
+        const isPortrait = img.naturalHeight >= img.naturalWidth;
+        applySpan(tile, isPortrait ? 1 : 2);
+      });
+      // After layout settles, do the row-aware pass
+      requestAnimationFrame(() => promoteRowAware(grid));
     }
 
     function appendTile(grid, name){
@@ -158,12 +219,8 @@
       img.alt = niceAlt(name);
       img.src = "nude/" + encodeURIComponent(name);
 
-      img.onload = () => {
-        const minPortrait = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-portrait')) || 360;
-        const isPortrait = img.naturalHeight >= img.naturalWidth;
-        if (isPortrait) sizePortrait(a, img, grid, minPortrait);
-        else            sizeLandscape(a, img, grid);
-      };
+      // when last image in a batch loads, (re)run placement
+      img.onload = () => initialPlace(grid);
 
       a.appendChild(img);
       grid.appendChild(a);
@@ -174,16 +231,7 @@
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        document.querySelectorAll('.group .grid').forEach(grid => {
-          grid.querySelectorAll('.tile').forEach(tile => {
-            const img = tile.querySelector('img');
-            if (!img || !img.complete) return;
-            const minPortrait = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-portrait')) || 360;
-            const isPortrait = img.naturalHeight >= img.naturalWidth;
-            if (isPortrait) sizePortrait(tile, img, grid, minPortrait);
-            else            sizeLandscape(tile, img, grid);
-          });
-        });
+        document.querySelectorAll('.group .grid').forEach(grid => promoteRowAware(grid));
       }, 120);
     });
 
