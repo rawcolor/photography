@@ -156,15 +156,22 @@
       grid.appendChild(a);
     }
 
-    // Measure & set grid row span based on actual rendered height
+    // Measure & set grid row span based on actual rendered height,
+    // enforcing a minimum height for portrait images
     function sizeTile(tile, img, grid){
       const gap = parseFloat(getComputedStyle(grid).getPropertyValue('--gap')) || 14;
       const row = parseFloat(getComputedStyle(grid).getPropertyValue('--row')) || 8;
 
-      // ensure the image has laid out
-      const h = img.getBoundingClientRect().height || img.naturalHeight || 0;
+      // actual rendered height
+      let h = img.getBoundingClientRect().height || img.naturalHeight || 0;
 
-      // Number of row units to span (include gap compensation)
+      // Enforce a minimum height for portrait images
+      const MIN_PORTRAIT = 320; // px — tweak to taste
+      if (img.naturalHeight >= img.naturalWidth) {
+        h = Math.max(h, MIN_PORTRAIT);
+      }
+
+      // Number of row units to span (includes gap compensation)
       const rows = Math.max(1, Math.ceil((h + gap) / (row + gap)));
       tile.style.gridRowEnd = `span ${rows}`;
     }
