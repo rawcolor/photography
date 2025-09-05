@@ -166,7 +166,7 @@
       let h = img.getBoundingClientRect().height || img.naturalHeight || 0;
 
       // Enforce a minimum height for portrait images
-      const MIN_PORTRAIT = 320; // px — tweak to taste
+      const MIN_PORTRAIT = 480; // px — tweak to taste
       if (img.naturalHeight >= img.naturalWidth) {
         h = Math.max(h, MIN_PORTRAIT);
       }
