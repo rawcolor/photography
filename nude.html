@@ -27,8 +27,13 @@
 
     .section{max-width:var(--max);margin:0 auto;padding:28px 20px 56px}
 
-    /* Masonry via CSS Grid + measured row spans */
-    .grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(230px, 1fr));grid-auto-rows:var(--row);gap:var(--gap)}
+    /* 12-column masonry grid (row height measured in JS) */
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(12, minmax(0, 1fr));
+      grid-auto-rows:var(--row);
+      gap:var(--gap);
+    }
 
     .tile{
       display:block;background:var(--bg-2);border:1px solid #1a1a1a;border-radius:var(--tile-radius);
@@ -37,11 +42,25 @@
     .tile:hover{transform:translateY(-2px)}
     .tile img{display:block;width:100%;height:auto}
 
-    /* Column span helpers */
-    .tile.span2{grid-column:span 2}
-    .tile.span3{grid-column:span 3}
-    @media (max-width:1000px){ .tile.span3{grid-column:span 2} }
-    @media (max-width:700px){ .tile.span2,.tile.span3{grid-column:auto} }
+    /* Span helpers (12-col base) */
+    .tile.span3{grid-column:span 3}   /* S  ~25% */
+    .tile.span5{grid-column:span 5}   /* M  ~41.7% */
+    .tile.span6{grid-column:span 6}   /* L  50% (two fit per row) */
+
+    /* Responsive: fewer columns on smaller viewports */
+    @media (max-width:1000px){
+      .grid{ grid-template-columns:repeat(8, minmax(0, 1fr)); }
+      /* remap to keep things reasonable on 8 cols */
+      .tile.span6{ grid-column:span 8; }  /* L takes full row */
+      .tile.span5{ grid-column:span 5; }  /* M ~62.5% */
+      .tile.span3{ grid-column:span 3; }  /* S ~37.5% */
+    }
+    @media (max-width:700px){
+      .grid{ grid-template-columns:repeat(4, minmax(0, 1fr)); }
+      .tile.span6{ grid-column:span 4; }  /* L full width */
+      .tile.span5{ grid-column:span 4; }  /* M full width */
+      .tile.span3{ grid-column:span 4; }  /* S full width */
+    }
 
     /* Group divider (no visible headers) */
     .group + .group{margin-top:28px;padding-top:10px;position:relative}
@@ -86,23 +105,28 @@
 
     // Keep order; group by first letter for subtle dividers
     const files = [
-      "A1L.jpeg","A2M.jpg","A3.jpg","A4.jpeg","A5.jpg","A6L.jpg",
-      "B1L.jpg","B2.jpg",
-      "C1.jpg","C2L.jpg",
-      "D1.jpg","D2.jpg"
+      "A1L.jpeg","A2M.jpg","A3S.jpg","A4.jpeg","A5S.jpg","A6L.jpg",
+      "B1L.jpg","B2M.jpg",
+      "C1S.jpg","C2L.jpg",
+      "D1M.jpg","D2S.jpg"
     ];
 
     function niceAlt(n){return n.replace(/\.[^.]+$/,'').replace(/[-_]+/g,' ').replace(/\s+/g,' ').trim();}
 
-    // Size from filename suffix: S/M/L before extension (e.g., nameS.jpg)
-    function sizeFromName(name){
+    // Map filename suffix (S/M/L) to span class for 12-col grid
+    function spanClassFromName(name){
       const m = name.match(/([SML])(?=\.[^.]+$)/i);
-      if(!m) return null; // no explicit size
+      if(!m) return null;
       const code = m[1].toUpperCase();
-      if (code === 'S') return 1;
-      if (code === 'M') return 2;
-      if (code === 'L') return 3;
+      if (code === 'S') return 'span3'; // 3/12
+      if (code === 'M') return 'span5'; // 5/12
+      if (code === 'L') return 'span6'; // 6/12 -> two per row
       return null;
+    }
+
+    // Fallback: if no suffix, use orientation (portrait ~span3, landscape ~span6)
+    function fallbackSpanClass(img){
+      return (img.naturalHeight >= img.naturalWidth) ? 'span3' : 'span6';
     }
 
     // Group by first letter
@@ -111,21 +135,14 @@
 
     const gallery = document.getElementById('gallery');
 
+    /* masonry helpers: compute row span from actual rendered height */
     function measureHeight(el){ return el.getBoundingClientRect().height || 0; }
-
     function setRowSpan(tile, grid, height){
       const styles = getComputedStyle(grid);
       const gap = parseFloat(styles.getPropertyValue('--gap')) || 14;
       const row = parseFloat(styles.getPropertyValue('--row')) || 8;
       const rows = Math.max(1, Math.ceil((height + gap) / (row + gap)));
       tile.style.gridRowEnd = `span ${rows}`;
-    }
-
-    function applySpan(tile, n){
-      tile.classList.remove('span2','span3');
-      if (n === 2) tile.classList.add('span2');
-      if (n === 3) tile.classList.add('span3');
-      // n === 1 -> no class
     }
 
     function appendTile(grid, name){
@@ -141,16 +158,11 @@
       img.src = "nude/" + encodeURIComponent(name);
 
       img.onload = () => {
-        // 1) Choose span from filename if present
-        const explicit = sizeFromName(name);
-        if (explicit) {
-          applySpan(a, explicit);
-        } else {
-          // 2) Otherwise, fall back to orientation-based default
-          const isPortrait = img.naturalHeight >= img.naturalWidth;
-          applySpan(a, isPortrait ? 1 : 2);
-        }
-        // 3) After span is applied, measure and set row span for masonry
+        // 1) Apply span from filename if present; else from orientation
+        const cls = spanClassFromName(name) || fallbackSpanClass(img);
+        a.classList.add(cls);
+
+        // 2) After span is applied, measure and set row span for masonry
         requestAnimationFrame(() => setRowSpan(a, grid, measureHeight(img)));
       };
 
@@ -158,7 +170,7 @@
       grid.appendChild(a);
     }
 
-    // Reflow on resize (debounced)
+    // Re-measure spans on resize (debounced)
     let resizeTimer;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
