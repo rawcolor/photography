@@ -10,9 +10,7 @@
       --gap:14px;            /* grid gap, keep in sync with JS */
       --row:8px;             /* base row height unit, keep in sync with JS */
       --tile-radius:10px;
-      --min-portrait:360px;  /* tweak to taste */
     }
-    @media (max-width:700px){ :root{ --min-portrait:280px; } }
 
     *{box-sizing:border-box}
     html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Helvetica,Arial,sans-serif}
@@ -88,13 +86,24 @@
 
     // Keep order; group by first letter for subtle dividers
     const files = [
-      "A1.jpeg","A2.jpg","A3.jpg","A4.jpeg","A5.jpg","A6.jpg",
-      "B1.jpg","B2.jpg",
-      "C1.jpg","C2.jpg",
+      "A1L.jpeg","A2M.jpg","A3.jpg","A4.jpeg","A5.jpg","A6L.jpg",
+      "B1L.jpg","B2.jpg",
+      "C1.jpg","C2L.jpg",
       "D1.jpg","D2.jpg"
     ];
 
     function niceAlt(n){return n.replace(/\.[^.]+$/,'').replace(/[-_]+/g,' ').replace(/\s+/g,' ').trim();}
+
+    // Size from filename suffix: S/M/L before extension (e.g., nameS.jpg)
+    function sizeFromName(name){
+      const m = name.match(/([SML])(?=\.[^.]+$)/i);
+      if(!m) return null; // no explicit size
+      const code = m[1].toUpperCase();
+      if (code === 'S') return 1;
+      if (code === 'M') return 2;
+      if (code === 'L') return 3;
+      return null;
+    }
 
     // Group by first letter
     const byLetter = {};
@@ -116,34 +125,7 @@
       tile.classList.remove('span2','span3');
       if (n === 2) tile.classList.add('span2');
       if (n === 3) tile.classList.add('span3');
-    }
-
-    // Portraits: escalate span 1→2→3 until >= min height
-    function sizePortrait(tile, img, grid, minPortrait){
-      const MAX_SPAN = 3;
-      let span = 1;
-
-      const step = () => {
-        requestAnimationFrame(() => {
-          const h = measureHeight(img);
-          if (h < minPortrait && span < MAX_SPAN) {
-            span += 1;
-            applySpan(tile, span);
-            step();
-          } else {
-            setRowSpan(tile, grid, measureHeight(img));
-          }
-        });
-      };
-
-      applySpan(tile, span);
-      step();
-    }
-
-    // Landscapes always span 2 columns
-    function sizeLandscape(tile, img, grid){
-      applySpan(tile, 2);
-      requestAnimationFrame(() => setRowSpan(tile, grid, measureHeight(img)));
+      // n === 1 -> no class
     }
 
     function appendTile(grid, name){
@@ -159,10 +141,17 @@
       img.src = "nude/" + encodeURIComponent(name);
 
       img.onload = () => {
-        const minPortrait = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-portrait')) || 360;
-        const isPortrait = img.naturalHeight >= img.naturalWidth;
-        if (isPortrait) sizePortrait(a, img, grid, minPortrait);
-        else            sizeLandscape(a, img, grid);
+        // 1) Choose span from filename if present
+        const explicit = sizeFromName(name);
+        if (explicit) {
+          applySpan(a, explicit);
+        } else {
+          // 2) Otherwise, fall back to orientation-based default
+          const isPortrait = img.naturalHeight >= img.naturalWidth;
+          applySpan(a, isPortrait ? 1 : 2);
+        }
+        // 3) After span is applied, measure and set row span for masonry
+        requestAnimationFrame(() => setRowSpan(a, grid, measureHeight(img)));
       };
 
       a.appendChild(img);
@@ -178,10 +167,7 @@
           grid.querySelectorAll('.tile').forEach(tile => {
             const img = tile.querySelector('img');
             if (!img || !img.complete) return;
-            const minPortrait = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--min-portrait')) || 360;
-            const isPortrait = img.naturalHeight >= img.naturalWidth;
-            if (isPortrait) sizePortrait(tile, img, grid, minPortrait);
-            else            sizeLandscape(tile, img, grid);
+            setRowSpan(tile, grid, measureHeight(img));
           });
         });
       }, 120);
