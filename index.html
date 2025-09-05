@@ -35,7 +35,6 @@
     .icon{display:inline-flex;width:18px;height:18px;vertical-align:middle;opacity:.9}
 
     .section{max-width:var(--max);margin:0 auto;padding:28px 20px 56px}
-    .section h2{margin:10px 0 18px;font-weight:600;letter-spacing:.3px;font-size:18px;color:#e5e5e5}
 
     /* Masonry via CSS columns */
     .masonry{column-gap:14px}
@@ -50,6 +49,9 @@
     }
     .tile:hover{transform:translateY(-2px)}
     .tile img{display:block;width:100%;height:auto}
+
+    /* Wide landscape images take two columns */
+    .tile.wide { column-span: 2; }
 
     /* Group divider */
     .group + .group{
@@ -142,6 +144,13 @@
         img.decoding = 'async';
         img.alt = niceAlt(name);
         img.src = "portrait/" + encodeURIComponent(name);
+
+        // If the image is wider than tall, mark it wide
+        img.onload = () => {
+          if (img.naturalWidth > img.naturalHeight) {
+            a.classList.add('wide');
+          }
+        };
 
         a.appendChild(img);
         grid.appendChild(a);
